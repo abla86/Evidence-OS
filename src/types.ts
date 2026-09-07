@@ -116,6 +116,16 @@ export interface StudyRecord {
     reason: string;
     keyQuote?: string;
   };
+  humanVerified?: boolean;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  dualReviewerAgreement?: {
+    reviewer1Decision: 'include' | 'exclude';
+    reviewer2Decision: 'include' | 'exclude';
+    consensusDecision: 'include' | 'exclude';
+    cohenKappa?: number;
+    notes?: string;
+  };
 }
 
 export interface CaspItem {

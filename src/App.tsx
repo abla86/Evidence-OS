@@ -189,6 +189,7 @@ export default function App() {
           <Stage4Screening
             studies={project.studies}
             pico={project.pico}
+            searchData={project.search}
             onChangeStudies={(updated) => setProject({ ...project, studies: updated })}
             onNext={goToNextStage}
             onPrev={goToPrevStage}

@@ -12,13 +12,19 @@ import {
   Tag,
   Search,
   Plus,
-  AlertTriangle
+  AlertTriangle,
+  ShieldCheck,
+  CheckCircle2,
+  Award
 } from 'lucide-react';
-import { StudyRecord, ExclusionReason, PicoData } from '../types';
+import { StudyRecord, ExclusionReason, PicoData, SearchData } from '../types';
+import { PrismaFlowDiagram } from './PrismaFlowDiagram';
+import { AiVerificationPanel } from './AiVerificationPanel';
 
 interface Stage4Props {
   studies: StudyRecord[];
   pico: PicoData;
+  searchData?: SearchData;
   onChangeStudies: (updated: StudyRecord[]) => void;
   onNext: () => void;
   onPrev: () => void;
@@ -28,6 +34,7 @@ interface Stage4Props {
 export const Stage4Screening: React.FC<Stage4Props> = ({
   studies,
   pico,
+  searchData,
   onChangeStudies,
   onNext,
   onPrev,
@@ -36,6 +43,8 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
   const [selectedStudyId, setSelectedStudyId] = useState<string>(studies[0]?.id || '');
   const [phaseFilter, setPhaseFilter] = useState<'all' | 'included' | 'excluded' | 'pending'>('all');
   const [activeScreeningPhase, setActiveScreeningPhase] = useState<'title_abstract' | 'full_text'>('title_abstract');
+  const [activePrismaFilter, setActivePrismaFilter] = useState<string>('all');
+  const [selectedExclusionFilter, setSelectedExclusionFilter] = useState<ExclusionReason | null>(null);
   const [isAiEvaluating, setIsAiEvaluating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -78,6 +87,9 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
           fullTextDecision: activeScreeningPhase === 'full_text' ? ('include' as const) : s.fullTextDecision,
           exclusionReason: undefined,
           exclusionNotes: undefined,
+          humanVerified: true,
+          verifiedBy: 'Forsker (Hovedgransker)',
+          verifiedAt: new Date().toISOString(),
         };
       } else {
         return {
@@ -87,6 +99,9 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
           fullTextDecision: activeScreeningPhase === 'full_text' ? ('exclude' as const) : s.fullTextDecision,
           exclusionReason: selectedExclusionReason,
           exclusionNotes: exclusionNotes || 'Ekskludert iht kriterier.',
+          humanVerified: true,
+          verifiedBy: 'Forsker (Hovedgransker)',
+          verifiedAt: new Date().toISOString(),
         };
       }
     });
@@ -98,6 +113,41 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
     const nextPending = updated.find(s => s.status === 'unscreened' && s.id !== currentStudy.id);
     if (nextPending) {
       setSelectedStudyId(nextPending.id);
+    }
+  };
+
+  const handleVerifyStudy = (studyId: string, verified: boolean) => {
+    const updated = studies.map(s => {
+      if (s.id !== studyId) return s;
+      return {
+        ...s,
+        humanVerified: verified,
+        verifiedBy: verified ? 'Forsker (Signert)' : undefined,
+        verifiedAt: verified ? new Date().toISOString() : undefined,
+      };
+    });
+    onChangeStudies(updated);
+  };
+
+  const handleBatchVerifyAll = () => {
+    const updated = studies.map(s => ({
+      ...s,
+      humanVerified: true,
+      verifiedBy: 'Forsker (Batch-godkjent)',
+      verifiedAt: new Date().toISOString(),
+    }));
+    onChangeStudies(updated);
+  };
+
+  const handleSelectPrismaFilter = (filter: 'all' | 'included' | 'excluded' | 'pending' | ExclusionReason) => {
+    setActivePrismaFilter(filter);
+    if (filter === 'all' || filter === 'included' || filter === 'excluded' || filter === 'pending') {
+      setPhaseFilter(filter);
+      setSelectedExclusionFilter(null);
+    } else {
+      // It's an ExclusionReason
+      setPhaseFilter('excluded');
+      setSelectedExclusionFilter(filter as ExclusionReason);
     }
   };
 
@@ -176,6 +226,11 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
                           s.authors.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchesSearch) return false;
 
+    if (selectedExclusionFilter) {
+      return (s.status === 'screened_excluded' || s.status === 'fulltext_excluded') && 
+             s.exclusionReason === selectedExclusionFilter;
+    }
+
     if (phaseFilter === 'included') return s.status === 'screened_included' || s.status === 'fulltext_eligible';
     if (phaseFilter === 'excluded') return s.status === 'screened_excluded' || s.status === 'fulltext_excluded';
     if (phaseFilter === 'pending') return s.status === 'unscreened';
@@ -230,25 +285,24 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
         </div>
       </div>
 
-      {/* Progress & Stat summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-3.5 rounded-xl border border-stone-200 text-xs">
-          <div className="text-stone-500 font-medium">Totalt importert</div>
-          <div className="text-xl font-bold text-stone-900 font-mono mt-0.5">{studies.length}</div>
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 text-xs">
-          <div className="text-emerald-700 font-medium">Inkludert</div>
-          <div className="text-xl font-bold text-emerald-800 font-mono mt-0.5">{includedCount}</div>
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border border-rose-200 bg-rose-50/40 text-xs">
-          <div className="text-rose-700 font-medium">Ekskludert</div>
-          <div className="text-xl font-bold text-rose-800 font-mono mt-0.5">{excludedCount}</div>
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border border-stone-200 text-xs">
-          <div className="text-amber-600 font-medium">Avventer screening</div>
-          <div className="text-xl font-bold text-amber-700 font-mono mt-0.5">{pendingCount}</div>
-        </div>
-      </div>
+      {/* PRISMA 2020 Live Dynamic Flow Diagram */}
+      <PrismaFlowDiagram
+        studies={studies}
+        searchData={searchData}
+        onSelectFilter={handleSelectPrismaFilter}
+        activeFilter={activePrismaFilter}
+        language={language}
+      />
+
+      {/* Zero-Hallucination & AI Verification Protocol Panel */}
+      <AiVerificationPanel
+        studies={studies}
+        currentStudy={currentStudy}
+        pico={pico}
+        onVerifyStudy={handleVerifyStudy}
+        onBatchVerifyAll={handleBatchVerifyAll}
+        language={language}
+      />
 
       {/* Workbench Layout: Master List Left, Detail Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -266,6 +320,23 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
                 className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-emerald-600"
               />
             </div>
+
+            {/* PRISMA reason filter notice */}
+            {selectedExclusionFilter && (
+              <div className="flex items-center justify-between px-2.5 py-1.5 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-900">
+                <span className="truncate">PRISMA-filter: <strong>{selectedExclusionFilter}</strong></span>
+                <button 
+                  onClick={() => {
+                    setSelectedExclusionFilter(null);
+                    setPhaseFilter('all');
+                    setActivePrismaFilter('all');
+                  }}
+                  className="text-xs text-rose-700 hover:text-rose-950 font-bold ml-2 underline shrink-0"
+                >
+                  Nullstill
+                </button>
+              </div>
+            )}
 
             <div className="flex gap-1 overflow-x-auto text-[11px]">
               <button
@@ -333,12 +404,20 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
 
                   <div className="flex items-center justify-between text-[11px] text-stone-500 mt-0.5">
                     <span className="truncate">{s.journal} ({s.year})</span>
-                    {s.aiScreening && (
-                      <span className="flex items-center gap-1 text-amber-700 font-mono text-[10px]">
-                        <Sparkles className="w-3 h-3 text-amber-600" />
-                        {s.aiScreening.confidence}% match
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {s.humanVerified && (
+                        <span className="flex items-center gap-0.5 text-blue-700 font-mono text-[10px] font-semibold" title="Verifisert av forsker">
+                          <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                          Signert
+                        </span>
+                      )}
+                      {s.aiScreening && (
+                        <span className="flex items-center gap-1 text-amber-700 font-mono text-[10px]">
+                          <Sparkles className="w-3 h-3 text-amber-600" />
+                          {s.aiScreening.confidence}%
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );
@@ -475,25 +554,64 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* INCLUDE BUTTON */}
+                  {/* INCLUDE BUTTON with visual markers */}
                   <button
                     onClick={() => handleDecision('include')}
-                    className="px-4 py-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs flex items-center justify-center gap-2 transition shadow-sm"
+                    className="px-4 py-3 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs flex items-center justify-center gap-2 transition shadow-sm border border-emerald-600 hover:shadow"
                   >
-                    <Check className="w-4 h-4" />
+                    <Check className="w-4 h-4 text-emerald-200" />
                     <span>Inkluder studie</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-800/90 text-[10px] font-mono font-bold border border-emerald-600/50">
+                      n = {includedCount}
+                    </span>
                   </button>
 
-                  {/* EXCLUDE BUTTON */}
-                  <div className="flex flex-col gap-2">
-                    <button
-                      onClick={() => handleDecision('exclude')}
-                      className="px-4 py-3 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-semibold text-xs flex items-center justify-center gap-2 transition shadow-sm"
-                    >
-                      <X className="w-4 h-4" />
-                      <span>Ekskluder studie</span>
-                    </button>
+                  {/* EXCLUDE BUTTON with visual markers */}
+                  <button
+                    onClick={() => handleDecision('exclude')}
+                    className="px-4 py-3 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-semibold text-xs flex items-center justify-center gap-2 transition shadow-sm border border-rose-600 hover:shadow"
+                  >
+                    <X className="w-4 h-4 text-rose-200" />
+                    <span>Ekskluder studie</span>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-800/90 text-[10px] font-mono font-bold border border-rose-600/50">
+                      n = {excludedCount}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Human verification toggle button */}
+                <div className="flex items-center justify-between p-2.5 rounded-xl border bg-slate-50 border-slate-200">
+                  <div className="flex items-center gap-2 text-xs">
+                    <ShieldCheck className={`w-4 h-4 ${currentStudy.humanVerified ? 'text-blue-600' : 'text-slate-400'}`} />
+                    <div>
+                      <span className="font-semibold text-slate-800">
+                        {currentStudy.humanVerified ? 'Forskervalidert (Signert av investigator)' : 'Menneskelig forskervalidering:'}
+                      </span>
+                      {currentStudy.verifiedAt && (
+                        <span className="text-[10px] text-slate-500 block">
+                          Sist signert: {new Date(currentStudy.verifiedAt).toLocaleTimeString('no-NO')}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  <button
+                    onClick={() => handleVerifyStudy(currentStudy.id, !currentStudy.humanVerified)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                      currentStudy.humanVerified
+                        ? 'bg-blue-100 text-blue-900 border border-blue-300 hover:bg-blue-200'
+                        : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
+                    }`}
+                  >
+                    {currentStudy.humanVerified ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-blue-700" />
+                        <span>Signert ✓</span>
+                      </>
+                    ) : (
+                      <span>Signer som forsker</span>
+                    )}
+                  </button>
                 </div>
 
                 {/* Exclusion Reason selector for rigorous PRISMA tracking */}
@@ -608,23 +726,59 @@ export const Stage4Screening: React.FC<Stage4Props> = ({
         </div>
       )}
 
-      {/* Navigation Footer */}
-      <div className="flex items-center justify-between pt-4 border-t border-stone-200">
+      {/* Navigation Footer with Visual Markers on Action Button */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-6 border-t border-stone-200 bg-white p-4 rounded-xl shadow-2xs">
         <button
           onClick={onPrev}
-          className="px-4 py-2.5 rounded-lg border border-stone-300 text-stone-700 hover:bg-stone-50 font-medium text-xs flex items-center gap-1.5 transition"
+          className="px-4 py-2.5 rounded-lg border border-stone-300 text-stone-700 hover:bg-stone-50 font-medium text-xs flex items-center justify-center gap-1.5 transition shadow-2xs"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Tilbake til Search</span>
         </button>
 
-        <button
-          onClick={onNext}
-          className="px-6 py-3 rounded-lg bg-stone-900 text-white hover:bg-stone-800 font-medium text-xs flex items-center gap-2 shadow-sm transition"
-        >
-          <span>Gå videre til Trinn 5: Critical appraisal</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onNext}
+            className={`group px-6 py-3.5 rounded-xl font-semibold text-xs flex items-center justify-between sm:justify-start gap-4 transition-all shadow-md ${
+              pendingCount === 0 
+                ? 'bg-gradient-to-r from-emerald-800 to-teal-800 hover:from-emerald-700 hover:to-teal-700 text-white ring-2 ring-emerald-500/40 shadow-emerald-900/20' 
+                : 'bg-stone-900 hover:bg-stone-800 text-white ring-1 ring-stone-700'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 text-left">
+              {pendingCount === 0 ? (
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+              ) : (
+                <span className="relative flex h-3 w-3">
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400"></span>
+                </span>
+              )}
+              
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm">Fortsett handling: Gå videre til Trinn 5: Critical appraisal</span>
+                  <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold shadow-2xs ${
+                    pendingCount === 0 
+                      ? 'bg-emerald-500 text-white border border-emerald-300' 
+                      : 'bg-amber-400 text-amber-950 border border-amber-300'
+                  }`}>
+                    {pendingCount === 0 ? `Fullført (${studies.length}/${studies.length}) ✓` : `${pendingCount} ubehandlet ⚠`}
+                  </span>
+                </div>
+                <div className="text-[10px] text-stone-300 font-normal mt-0.5">
+                  {pendingCount === 0 
+                    ? '✓ PRISMA 2020 Balansert • Alle studier er ferdig evaluert og klare for CASP/RoB' 
+                    : `Merk: ${pendingCount} studie(r) gjenstår til screening før PRISMA er komplett`}
+                </div>
+              </div>
+            </div>
+
+            <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform shrink-0" />
+          </button>
+        </div>
       </div>
     </div>
   );
