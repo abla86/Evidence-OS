@@ -7,6 +7,7 @@ import {
   Table, 
   Sparkles, 
   ShieldCheck, 
+  ShieldAlert,
   Lock, 
   Check, 
   Plus, 
@@ -20,6 +21,8 @@ import {
   Database
 } from 'lucide-react';
 import { StudyExtraction, StudyRecord, ExtractionTemplateField, GdprSecurityRecord } from '../types';
+import { GdprPrivacyDashboard } from './GdprPrivacyDashboard';
+import { scanTextField, sanitizeText, sanitizeExtraction, scanExtraction } from '../utils/gdprScanner';
 
 interface Stage7Props {
   extractions: Record<string, StudyExtraction>;
@@ -227,6 +230,33 @@ export const Stage7Extraction: React.FC<Stage7Props> = ({
     });
   };
 
+  // GDPR Sanitization Handlers
+  const handleSanitizeActiveExtraction = () => {
+    if (!currentStudy) return;
+    const { sanitizedExtraction } = sanitizeExtraction(currentExtraction);
+    onChange({
+      ...extractions,
+      [currentStudy.id]: sanitizedExtraction,
+    });
+  };
+
+  const handleSanitizeAllExtractions = (updater?: (prev: StudyExtraction) => StudyExtraction) => {
+    const updatedExtractions = { ...extractions };
+    eligibleStudies.forEach(s => {
+      const ext = updatedExtractions[s.id] || {
+        ...currentExtraction,
+        studyId: s.id,
+      };
+      if (updater) {
+        updatedExtractions[s.id] = updater(ext);
+      } else {
+        const { sanitizedExtraction } = sanitizeExtraction(ext);
+        updatedExtractions[s.id] = sanitizedExtraction;
+      }
+    });
+    onChange(updatedExtractions);
+  };
+
   // Automated AI Data Extraction based on active user template
   const handleRunAiExtraction = async () => {
     if (!currentStudy) return;
@@ -425,7 +455,16 @@ export const Stage7Extraction: React.FC<Stage7Props> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleSanitizeActiveExtraction}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+            title="Saniter ekstraherte data ved å maskere alle sensitive personopplysninger (PII/PHI)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>Saniter data</span>
+          </button>
+
           <button
             onClick={exportGdprAudit}
             className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-800 text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs"
@@ -445,70 +484,21 @@ export const Stage7Extraction: React.FC<Stage7Props> = ({
         </div>
       </div>
 
-      {/* Security & GDPR Research Compliance Banner */}
-      <div className="bg-white rounded-2xl border border-blue-200 p-5 shadow-sm space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
-              <Lock className="w-4 h-4 text-blue-600" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900">
-                  GDPR &amp; Forskningens datasikkerhet (Research Data Integrity)
-                </h3>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
-                  Art. 9(2)(j) Samsvar
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Automatisk PII-vask, pseudonymisering og dataminimering for helseforskning.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setShowGdprDetails(!showGdprDetails)}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 self-start sm:self-auto"
-          >
-            <span>{showGdprDetails ? 'Skjul sikkerhetsdetaljer' : 'Vis GDPR-sertifisering'}</span>
-          </button>
-        </div>
-
-        {showGdprDetails && (
-          <div className="pt-4 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
-                <Check className="w-3.5 h-3.5" />
-                <span>Ingen PII / PHI funnet</span>
-              </div>
-              <p className="text-[11px] text-slate-600">
-                Ekstraksjonsmotoren tillater kun statistiske sammendrag (N, rater, gjennomsnitt). Pasientidentifiserende elementer filtreres aktivt bort.
-              </p>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <div className="flex items-center gap-1.5 text-blue-700 font-bold">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Dataminimering (Art. 5)</span>
-              </div>
-              <p className="text-[11px] text-slate-600">
-                Data begrenses strengt til de definerte feltene i uttrekksmalen som kreves for metaanalyse og sensitivitetstester.
-              </p>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <div className="flex items-center gap-1.5 text-indigo-700 font-bold">
-                <Lock className="w-3.5 h-3.5" />
-                <span>Kryptografisk revisjon</span>
-              </div>
-              <p className="text-[11px] text-slate-600 font-mono truncate">
-                Avtrykk: {currentExtraction.gdprCompliance?.auditSignature || 'SHA256:verified-protocol'}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* GDPR & Privacy Compliance Interactive Dashboard Component */}
+      {currentStudy && (
+        <GdprPrivacyDashboard
+          currentStudy={currentStudy}
+          currentExtraction={currentExtraction}
+          onUpdateExtraction={(updated) => {
+            onChange({
+              ...extractions,
+              [currentStudy.id]: updated,
+            });
+          }}
+          onUpdateAllExtractions={handleSanitizeAllExtractions}
+          language={language}
+        />
+      )}
 
       {/* Template Selection and Customization Hub */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
@@ -702,33 +692,125 @@ export const Stage7Extraction: React.FC<Stage7Props> = ({
           </div>
 
           {/* Intervention Details */}
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-indigo-600" />
-              <span>2. Intervensjon &amp; Kontrollbetingelser</span>
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Intervensjonsbeskrivelse</label>
-                <input
-                  type="text"
-                  value={currentExtraction.interventionDetails}
-                  onChange={(e) => handleUpdateExtractionField('interventionDetails', e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl p-2.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+          {(() => {
+            const interventionIssues = scanTextField(currentExtraction.interventionDetails, 'interventionDetails', 'Intervensjonsbeskrivelse');
+            const controlIssues = scanTextField(currentExtraction.controlDetails, 'controlDetails', 'Kontrollbeskrivelse');
 
+            return (
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Kontrollbeskrivelse</label>
-                <input
-                  type="text"
-                  value={currentExtraction.controlDetails}
-                  onChange={(e) => handleUpdateExtractionField('controlDetails', e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl p-2.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                    <span>2. Intervensjon &amp; Kontrollbetingelser</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {interventionIssues.length === 0 && controlIssues.length === 0 ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded font-semibold">
+                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                        <span>Skannet: PII-fri</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-rose-700 bg-rose-50 border border-rose-300 px-2 py-0.5 rounded font-bold animate-pulse">
+                        <ShieldAlert className="w-3 h-3 text-rose-600" />
+                        <span>{interventionIssues.length + controlIssues.length} PII oppdaget</span>
+                      </span>
+                    )}
+                  </div>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">Intervensjonsbeskrivelse</label>
+                      {interventionIssues.length === 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          <span>PII-fri</span>
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-rose-700 bg-rose-50 border border-rose-300 px-1.5 py-0.5 rounded font-bold">
+                            <ShieldAlert className="w-3 h-3 text-rose-600" />
+                            <span>{interventionIssues.length} PII funnet</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const { text } = sanitizeText(currentExtraction.interventionDetails);
+                              handleUpdateExtractionField('interventionDetails', text);
+                            }}
+                            className="text-[10px] font-bold text-rose-700 hover:text-rose-900 underline"
+                            title="Masker PII i dette feltet"
+                          >
+                            Masker
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={currentExtraction.interventionDetails}
+                      onChange={(e) => handleUpdateExtractionField('interventionDetails', e.target.value)}
+                      className={`w-full text-xs rounded-xl p-2.5 transition focus:bg-white focus:outline-none focus:ring-2 ${
+                        interventionIssues.length > 0 
+                          ? 'bg-rose-50 border border-rose-300 text-rose-950 focus:ring-rose-500' 
+                          : 'bg-slate-50 border border-slate-300 focus:ring-blue-500'
+                      }`}
+                    />
+                    {interventionIssues.length > 0 && (
+                      <div className="mt-1 text-[10px] text-rose-600 font-mono">
+                        ⚠ Oppdaget: {interventionIssues.map(i => `${i.typeLabel} ("${i.token}")`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">Kontrollbeskrivelse</label>
+                      {controlIssues.length === 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          <span>PII-fri</span>
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-rose-700 bg-rose-50 border border-rose-300 px-1.5 py-0.5 rounded font-bold">
+                            <ShieldAlert className="w-3 h-3 text-rose-600" />
+                            <span>{controlIssues.length} PII funnet</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const { text } = sanitizeText(currentExtraction.controlDetails);
+                              handleUpdateExtractionField('controlDetails', text);
+                            }}
+                            className="text-[10px] font-bold text-rose-700 hover:text-rose-900 underline"
+                            title="Masker PII i dette feltet"
+                          >
+                            Masker
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={currentExtraction.controlDetails}
+                      onChange={(e) => handleUpdateExtractionField('controlDetails', e.target.value)}
+                      className={`w-full text-xs rounded-xl p-2.5 transition focus:bg-white focus:outline-none focus:ring-2 ${
+                        controlIssues.length > 0 
+                          ? 'bg-rose-50 border border-rose-300 text-rose-950 focus:ring-rose-500' 
+                          : 'bg-slate-50 border border-slate-300 focus:ring-blue-500'
+                      }`}
+                    />
+                    {controlIssues.length > 0 && (
+                      <div className="mt-1 text-[10px] text-rose-600 font-mono">
+                        ⚠ Oppdaget: {controlIssues.map(i => `${i.typeLabel} ("${i.token}")`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Outcomes and Effect Measures */}
           <div>
@@ -853,6 +935,7 @@ export const Stage7Extraction: React.FC<Stage7Props> = ({
                 <th className="p-3 text-right">Hendelser (Int)</th>
                 <th className="p-3 text-right">Hendelser (Ktr)</th>
                 <th className="p-3 text-right">Rate (I vs K)</th>
+                <th className="p-3 text-center">GDPR Art. 9</th>
                 <th className="p-3 text-center">Handling</th>
               </tr>
             </thead>
@@ -869,6 +952,10 @@ export const Stage7Extraction: React.FC<Stage7Props> = ({
 
                 const rateI = tI > 0 ? ((eI / tI) * 100).toFixed(1) + '%' : '-';
                 const rateC = tC > 0 ? ((eC / tC) * 100).toFixed(1) + '%' : '-';
+
+                // Scan study extraction for GDPR status
+                const studyReport = ext ? scanExtraction(ext) : null;
+                const hasStudyPii = studyReport?.hasPii;
 
                 return (
                   <tr
@@ -901,6 +988,19 @@ export const Stage7Extraction: React.FC<Stage7Props> = ({
                     </td>
                     <td className="p-3 text-right font-mono text-[11px]">
                       <span className="text-blue-700 font-bold">{rateI}</span> vs <span className="text-slate-600">{rateC}</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      {hasStudyPii ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded font-bold">
+                          <ShieldAlert className="w-3 h-3 text-rose-600" />
+                          <span>{studyReport?.issuesCount} PII</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          <span>Sikker</span>
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-center">
                       <button
